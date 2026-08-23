@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A utility for compressing images and videos using FFmpeg"
 authors = [{name = "Frestina", email = "194493036+Frestina@users.noreply.github.com"}]
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.13"
 dependencies = [
     "file-renamer",

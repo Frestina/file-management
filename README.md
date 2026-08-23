@@ -132,5 +132,4 @@ output extensions are normalised to lowercase.
 
 ## Licence
 
-Not currently licensed. All rights reserved by default — add a licence file if
-you want others to reuse this.
+[MIT](LICENSE).

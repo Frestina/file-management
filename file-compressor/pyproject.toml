@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "file-compressor"
+version = "0.1.0"
+description = "A utility for compressing images and videos using FFmpeg"
+authors = [{name = "Frestina", email = "194493036+Frestina@users.noreply.github.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "file-renamer",
+    "rich>=14.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+file-renamer = { path = "../file-renamer", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/file_compressor"]

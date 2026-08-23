@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "file-renamer"
+version = "0.1.0"
+description = "A utility for renaming files with timestamps and parent names"
+authors = [{name = "Frestina", email = "194493036+Frestina@users.noreply.github.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/file_renamer"]

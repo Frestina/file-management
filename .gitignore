@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# YOLO model weights - large binaries, kept out of git.
+# yolo11s.pt and yolo11x.pt are downloadable from Ultralytics.
+# yolo11x_custom.pt is trained locally - back it up separately, it is
+# not reproducible from this repo.
+*.pt
+
+# Ultralytics run artifacts
+runs/
+
+# Sorted output (each run writes <model>-<timestamp>/ into the library dir)
+test-output/
+visualize/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

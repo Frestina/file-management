@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yolo-sorter"
+version = "0.1.0"
+description = "Sort images and videos using YOLO object detection"
+authors = [{name = "Frestina", email = "194493036+Frestina@users.noreply.github.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "file-compressor",
+    "file-renamer",
+    "questionary>=2.1.0",
+    "rich>=14.1.0",
+    "ultralytics>=8.3.178",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort"]
+
+[project.scripts]
+yolo-sort = "yolo_sorter.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yolo_sorter"]
+
+[tool.uv.sources]
+file-renamer = { path = "../file-renamer", editable = true }
+file-compressor = { path = "../file-compressor", editable = true }

@@ -108,13 +108,15 @@ labelled stills in the library:
 
 | | `yolo11x_custom` | `speciesnet` |
 | --- | --- | --- |
-| overall exact-correct | 107/164 — 65% | 122/164 — 74% |
-| correct when it commits | 107/130 — 82% | 122/126 — 97% |
+| overall exact-correct | 107/164 — 65% | 123/164 — 75% |
+| correct when it commits | 107/130 — 82% | 123/128 — 96% |
 | animal missed entirely | ~21% | 3% |
 
 Per-species precision went from 55% to 100% on badger and 85% to 100% on moose.
 Being two-stage is what closes the miss rate: the classifier only has to name a
 crop the detector already found.
+
+The benchmark that produces these numbers is in `yolo-sorter/benchmarks/`.
 
 It also answers at genus or family level when it will not commit to a species.
 Those land in `review_*` folders (`usikker_*` in Norwegian) rather than

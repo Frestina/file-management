@@ -101,10 +101,13 @@ Two classifiers are available.
 
 `yolo` (default) uses a local `.pt` model from `yolo-sorter/models/`.
 
-`speciesnet` uses [SpeciesNet](https://github.com/google/cameratrapai) (Apache-2.0),
-which pairs [MegaDetector](https://github.com/agentmorris/MegaDetector) for
-locating the animal with a classifier covering 2000+ labels. Scored on the 164
-labelled stills in the library:
+`speciesnet` uses [SpeciesNet](https://github.com/google/cameratrapai), which
+pairs [MegaDetector](https://github.com/agentmorris/MegaDetector) for locating
+the animal with a classifier covering 2000+ labels. Code and weights are both
+Apache-2.0, and MegaDetector is MIT — no copyleft or non-commercial terms
+anywhere in the chain.
+
+Scored on the 164 labelled stills in the library:
 
 | | `yolo11x_custom` | `speciesnet` |
 | --- | --- | --- |

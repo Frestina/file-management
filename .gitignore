@@ -28,3 +28,6 @@ visualize/
 .idea/
 .DS_Store
 *.swp
+
+# Benchmark result caches (regenerate by re-running the harness)
+yolo-sorter/benchmarks/*.json

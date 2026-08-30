@@ -20,6 +20,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort"]
+# The speciesnet backend. opencv is held below 5 so it does not pull a major
+# version bump into an environment the yolo backend already relies on.
+speciesnet = [
+    "speciesnet>=5.0.5",
+    "opencv-python<5",
+    "opencv-python-headless<5",
+]
 
 [project.scripts]
 yolo-sort = "yolo_sorter.main:main"

@@ -1,14 +1,16 @@
 """Video detection and classification."""
 
 import cv2
-from ultralytics import YOLO
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
+
+if TYPE_CHECKING:
+    from ultralytics import YOLO
 
 
 class VideoDetector:
     """Handles video detection and classification using YOLO."""
     
-    def __init__(self, model: YOLO):
+    def __init__(self, model: "YOLO"):
         """Initialize with a YOLO model."""
         self.model = model
     
@@ -25,36 +27,68 @@ class VideoDetector:
             return True
     
     def get_class_name(
-        self, 
+        self,
         video_path: str,
         frame_sample_rate: int = 30,
         max_frames: int = 300,
-        method: str = "most_frequent"
+        method: str = "most_frequent",
+        min_confidence: float = 0.25
     ) -> str:
         """
         Get the class name for a video based on frame analysis.
-        
+
         Args:
             video_path: Path to video file
             frame_sample_rate: Sample every Nth frame
             max_frames: Maximum number of frames to process
-            method: 'most_frequent' or 'highest_confidence'
-            
+            method: 'most_frequent' (default), 'confidence_weighted' or 'highest_confidence'
+            min_confidence: Discard detections below this score before voting
+
         Returns:
             Class name or 'unsorted' if no detections
         """
-        detections = self._extract_detections(video_path, frame_sample_rate, max_frames)
-        
+        return self.get_classification(
+            video_path, frame_sample_rate, max_frames, method, min_confidence
+        )[0]
+
+    def get_classification(
+        self,
+        video_path: str,
+        frame_sample_rate: int = 30,
+        max_frames: int = 300,
+        method: str = "most_frequent",
+        min_confidence: float = 0.25
+    ) -> Tuple[str, float]:
+        """
+        Get the class name for a video along with a score for that call.
+
+        The score is the mean confidence of the frames that voted for the
+        winning class, so a clip decided by one glimpse reads differently from
+        one the model saw clearly throughout. Returns ('unsorted', 0.0) when
+        nothing was detected.
+        """
+        detections = self._extract_detections(
+            video_path, frame_sample_rate, max_frames, min_confidence
+        )
+
         if method == "highest_confidence":
-            return self._get_highest_confidence_class(detections)
+            class_name = self._get_highest_confidence_class(detections)
+        elif method == "most_frequent":
+            class_name = self._get_most_frequent_class(detections)
         else:
-            return self._get_most_frequent_class(detections)
-    
+            class_name = self._get_confidence_weighted_class(detections)
+
+        scores = [conf for name, conf in detections if name == class_name]
+        confidence = sum(scores) / len(scores) if scores else 0.0
+
+        return class_name, confidence
+
     def _extract_detections(
-        self, 
-        video_path: str, 
-        frame_sample_rate: int, 
-        max_frames: int
+        self,
+        video_path: str,
+        frame_sample_rate: int,
+        max_frames: int,
+        min_confidence: float = 0.0
     ) -> List[Tuple[str, float]]:
         """Extract detections from video frames."""
         cap = cv2.VideoCapture(video_path)
@@ -79,8 +113,11 @@ class VideoDetector:
                     
                     for i, class_id in enumerate(classes):
                         class_id = int(class_id)
-                        conf = confs[i]
-                        
+                        conf = float(confs[i])
+
+                        if conf < min_confidence:
+                            continue
+
                         # Convert class ID to name
                         if isinstance(names, dict) and class_id in names:
                             class_name = names[class_id]
@@ -96,6 +133,26 @@ class VideoDetector:
         cap.release()
         return detections
     
+    def _get_confidence_weighted_class(self, detections: List[Tuple[str, float]]) -> str:
+        """
+        Return the class with the highest total confidence across all frames.
+
+        Sits between the other two methods and avoids how each of them goes
+        wrong: a plain frame count lets a run of weak, wrong detections outvote
+        a handful of strong correct ones, while taking the single highest score
+        lets one unlucky frame decide the whole clip. Summing confidence per
+        class means a frame only carries as much weight as the model's certainty
+        about it.
+        """
+        if not detections:
+            return "unsorted"
+
+        class_scores = {}
+        for class_name, conf in detections:
+            class_scores[class_name] = class_scores.get(class_name, 0.0) + conf
+
+        return max(class_scores.items(), key=lambda x: x[1])[0]
+
     def _get_most_frequent_class(self, detections: List[Tuple[str, float]]) -> str:
         """Return the most frequently detected class."""
         if not detections:

@@ -1,5 +1,6 @@
 """Main YOLO file sorting class."""
 
+import csv
 import os
 import shutil
 from datetime import datetime
@@ -9,7 +10,6 @@ from typing import Dict, List, Optional
 
 from rich.console import Console
 from rich.progress import Progress
-from ultralytics import YOLO
 
 from file_compressor import FileCompressor, CompressionSettings
 from file_renamer import FileRenamer
@@ -17,7 +17,13 @@ from file_renamer import FileRenamer
 from .detection.image_detector import ImageDetector
 from .detection.video_detector import VideoDetector
 from .ui.display import create_progress, sorting_summary, visualize_summary
-from .utils.file_utils import count_files_by_type, get_total_size
+from .utils.file_utils import (
+  IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+  count_files_by_type,
+  find_unsupported_files,
+  get_total_size,
+)
 from .utils.stats import calculate_compression_stats
 
 
@@ -32,11 +38,26 @@ class YoloFileSorter:
       console: Console,
       visualize_only: bool = False,
       compress_files: bool = True,
+      video_method: str = "most_frequent",
+      min_confidence: float = 0.25,
+      backend: str = "yolo",
+      language: str = "en",
   ) -> None:
     """Initialize the YOLO file sorter."""
-    model_name = os.path.splitext(os.path.basename(model_path))[0]
+    self.backend = backend
+    self.language = language
+
+    model_name = (
+      "speciesnet" if backend == "speciesnet"
+      else os.path.splitext(os.path.basename(model_path))[0]
+    )
     self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    self.model = YOLO(model_path)
+    if backend == "speciesnet":
+      self.model = None
+    else:
+      # Imported lazily so the speciesnet backend does not need ultralytics.
+      from ultralytics import YOLO
+      self.model = YOLO(model_path)
     self.input_dir = input_dir
     self.output_dir = Path(output_dir)
     
@@ -48,12 +69,23 @@ class YoloFileSorter:
         
     self.console = console
     self.compress_files = compress_files
+    self.video_method = video_method
+    self.min_confidence = min_confidence
     
     # Initialize components
     self.compressor = FileCompressor(console)
     self.renamer = FileRenamer()
-    self.image_detector = ImageDetector(self.model)
-    self.video_detector = VideoDetector(self.model)
+
+    if backend == "speciesnet":
+      from .detection.speciesnet_detector import (
+        SpeciesNetDetector,
+        SpeciesNetVideoDetector,
+      )
+      self.image_detector = SpeciesNetDetector(language=language)
+      self.video_detector = SpeciesNetVideoDetector(self.image_detector)
+    else:
+      self.image_detector = ImageDetector(self.model)
+      self.video_detector = VideoDetector(self.model)
     
     # Setup compression directory
     if self.compress_files and not visualize_only:
@@ -74,6 +106,9 @@ class YoloFileSorter:
       self.image_count = 0
       self.video_count = 0
         
+    # Per-file results, written out as manifest.csv at the end of a run.
+    self.manifest: List[Dict[str, str]] = []
+
     # Counters
     self.class_counts: Dict[str, int] = {}
     self.corrupted_count = 0
@@ -83,14 +118,34 @@ class YoloFileSorter:
   def sort_files(self) -> None:
       """Main method to sort all files in the input directory."""
       files = os.listdir(self.input_dir)
-      
+
+      self._report_unsupported_files()
       self._process_videos(files)
       self._process_images(files)
       self._cleanup_and_report()
 
+  def _report_unsupported_files(self) -> None:
+    """Warn about files in the input directory that will not be processed."""
+    skipped = find_unsupported_files(self.input_dir)
+    if not skipped:
+      return
+
+    self.console.print(
+      f"[yellow]Skipping {len(skipped)} file(s) in an unsupported format.[/yellow] "
+      f"[dim]Supported: {', '.join(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS)}[/dim]"
+    )
+
+    for name in skipped[:10]:
+      self.console.print(f"  [yellow]Skipped:[/yellow] {name}")
+
+    if len(skipped) > 10:
+      self.console.print(f"  [dim]...and {len(skipped) - 10} more.[/dim]")
+
+    self.console.print("\n")
+
   def _process_videos(self, files: List[str]) -> None:
     """Process all video files."""
-    video_files = [f for f in files if f.lower().endswith(".avi")]
+    video_files = [f for f in files if f.lower().endswith(VIDEO_EXTENSIONS)]
     if not video_files:
       return
 
@@ -133,8 +188,12 @@ class YoloFileSorter:
       return
     
     try:
-      class_name = self.video_detector.get_class_name(video_path)
-      self._sort_file(video_path, class_name, video_name)
+      class_name, confidence = self.video_detector.get_classification(
+        video_path,
+        method=self.video_method,
+        min_confidence=self.min_confidence,
+      )
+      self._sort_file(video_path, class_name, video_name, confidence, "video")
       self.console.print(f"[green]Processed:[/green] {video_name} -> {class_name}/")
     except Exception as e:
       self._handle_file_error(
@@ -159,8 +218,10 @@ class YoloFileSorter:
       return
     
     try:
-      class_name = self.image_detector.get_class_name(image_path)
-      self._sort_file(image_path, class_name, image_name)
+      class_name, confidence = self.image_detector.get_classification(
+        image_path, min_confidence=self.min_confidence
+      )
+      self._sort_file(image_path, class_name, image_name, confidence, "image")
       self.console.print(f"[green]Processed:[/green] {image_name} -> {class_name}/")
     except Exception as e:
       self._handle_file_error(
@@ -168,7 +229,14 @@ class YoloFileSorter:
           f"[red]Error processing {image_name}: {e}[/red]"
       )
 
-  def _sort_file(self, file_path: str, class_name: str, original_name: str) -> None:
+  def _sort_file(
+    self,
+    file_path: str,
+    class_name: str,
+    original_name: str,
+    confidence: float = 0.0,
+    media_type: str = "",
+  ) -> None:
     """Sort a file into the appropriate class directory."""
     class_dir = self.base_output_dir / class_name
     class_dir.mkdir(parents=True, exist_ok=True)
@@ -200,6 +268,17 @@ class YoloFileSorter:
     
     # Update counter
     self.class_counts[class_name] = self.class_counts.get(class_name, 0) + 1
+
+    self.manifest.append({
+      "original_file": original_name,
+      "species": class_name,
+      "confidence": f"{confidence:.3f}",
+      "captured_at": datetime.fromtimestamp(original_timestamp).isoformat(
+        sep=" ", timespec="seconds"
+      ),
+      "media_type": media_type,
+      "output_file": str(dest_path.relative_to(self.base_output_dir)),
+    })
 
   def _preserve_timestamps(self, source_path: str, dest_path: str) -> None:
     """Preserve original file timestamps."""
@@ -301,8 +380,42 @@ class YoloFileSorter:
     setattr(self, counter_attr, getattr(self, counter_attr) + 1)
     self.console.print(message)
 
+  def _write_manifest(self) -> None:
+    """
+    Write a row per sorted file to manifest.csv.
+
+    The folder tree answers "show me the lynx"; this answers "when, and how
+    sure were you" — which is what a survey report or a compensation claim
+    has to cite, and what lets someone re-check every low-confidence call
+    without opening the rest.
+    """
+    if not self.manifest:
+      return
+
+    manifest_path = self.base_output_dir / "manifest.csv"
+    fieldnames = [
+      "original_file", "species", "confidence",
+      "captured_at", "media_type", "output_file",
+    ]
+
+    try:
+      with open(manifest_path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(
+          sorted(self.manifest, key=lambda row: row["captured_at"])
+        )
+      self.console.print(
+        f"[green]Wrote manifest:[/green] {manifest_path} "
+        f"[dim]({len(self.manifest)} rows)[/dim]"
+      )
+    except OSError as e:
+      self.console.print(f"[yellow]Warning: Could not write manifest: {e}[/yellow]")
+
   def _cleanup_and_report(self) -> None:
     """Clean up temporary files and show final report."""
+    self._write_manifest()
+
     # Clean up compressed files
     if self.temp_compressed_dir and self.temp_compressed_dir.exists():
       try:
@@ -329,6 +442,12 @@ class YoloFileSorter:
 
   def visualize_image(self, image: SimpleNamespace) -> None:
     """Visualize a single image with YOLO detections."""
+    if self.model is None:
+      raise RuntimeError(
+        "--visualize draws YOLO bounding boxes and needs the yolo backend; "
+        "SpeciesNet returns labels rather than boxes."
+      )
+
     img_path = os.path.join(self.input_dir, image.name)
 
     # Only compress when there is a temp directory to compress into.
@@ -372,7 +491,7 @@ class YoloFileSorter:
 
   def _process_images(self, files: List[str]) -> None:
     """Process all image files."""
-    image_files = [f for f in files if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+    image_files = [f for f in files if f.lower().endswith(IMAGE_EXTENSIONS)]
     if not image_files:
       return
 
@@ -386,6 +505,11 @@ class YoloFileSorter:
 
       # Processing phase
       image_task = progress.add_task("Processing images...", total=len(image_files))
+
+      warm = getattr(self.image_detector, "warm", None)
+      if warm:
+        progress.update(image_task, description="Classifying images...")
+        warm(compressed_files[name] for name in image_files)
 
       for image_name in image_files:
         processing_path = compressed_files[image_name]

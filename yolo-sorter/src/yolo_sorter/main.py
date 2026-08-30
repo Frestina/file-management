@@ -59,6 +59,33 @@ def main() -> None:
     help="Compress files before processing (--no-compress to disable). "
          "Prompts when not given.",
   )
+  parser.add_argument(
+    "--video_method",
+    choices=["most_frequent", "confidence_weighted", "highest_confidence"],
+    default="most_frequent",
+    help="How to pick one class from a clip's sampled frames.",
+  )
+  parser.add_argument(
+    "--backend",
+    choices=["yolo", "speciesnet"],
+    default="yolo",
+    help="Classifier to use. On the labelled library speciesnet was correct "
+         "97%% of the time when it committed, against 82%% for local yolo.",
+  )
+  parser.add_argument(
+    "--language",
+    choices=["en", "no"],
+    default="en",
+    help="Language for output folder names. 'no' gives Norwegian species "
+         "names (elg, rådyr, gaupe). speciesnet backend only.",
+  )
+  parser.add_argument(
+    "--min_confidence",
+    type=float,
+    default=0.25,
+    help="Detections below this score are filed as unsorted rather than "
+         "guessed at. Applies to stills and to each sampled video frame.",
+  )
 
   parsed = parser.parse_args()
   args = Args(
@@ -68,6 +95,10 @@ def main() -> None:
     output_dir=parsed.output_dir,
     compress_files=parsed.compress
   )
+  args.video_method = parsed.video_method
+  args.min_confidence = parsed.min_confidence
+  args.backend = parsed.backend
+  args.language = parsed.language
 
   console = Console()
 
@@ -101,10 +132,11 @@ def main() -> None:
     f"({total_gib_input:.1f} GiB)[/yellow]\n"
   )
 
-  interactive_model_prompt(args, console)
+  if args.backend == "yolo":
+    interactive_model_prompt(args, console)
   print_arguments(args, console)
 
-  model_path = _resolve_model_path(args.model)
+  model_path = _resolve_model_path(args.model) if args.backend == "yolo" else ""
   
   sorter = YoloFileSorter(
     model_path=model_path,
@@ -112,6 +144,10 @@ def main() -> None:
     output_dir=args.output_dir,
     console=console,
     compress_files=args.compress_files,
+    video_method=args.video_method,
+    min_confidence=args.min_confidence,
+    backend=args.backend,
+    language=args.language,
   )
 
   try:

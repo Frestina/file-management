@@ -80,6 +80,14 @@ def main() -> None:
          "names (elg, rådyr, gaupe). speciesnet backend only.",
   )
   parser.add_argument(
+    "--low_contrast_threshold",
+    type=float,
+    default=30.0,
+    help="Files with contrast below this are reported as shot in poor "
+         "conditions (fog, rain, darkness). Annotates the manifest; never "
+         "changes how a file is classified.",
+  )
+  parser.add_argument(
     "--min_confidence",
     type=float,
     default=0.25,
@@ -99,6 +107,7 @@ def main() -> None:
   args.min_confidence = parsed.min_confidence
   args.backend = parsed.backend
   args.language = parsed.language
+  args.low_contrast_threshold = parsed.low_contrast_threshold
 
   console = Console()
 
@@ -148,6 +157,7 @@ def main() -> None:
     min_confidence=args.min_confidence,
     backend=args.backend,
     language=args.language,
+    low_contrast_threshold=args.low_contrast_threshold,
   )
 
   try:

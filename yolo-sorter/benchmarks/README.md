@@ -30,6 +30,15 @@ it measures shipped code rather than a second copy of the mapping. It treats
 `roe_deer` / `red_deer` as satisfying a coarse `deer` folder, because the
 library labels one class where the classifier resolves several.
 
+## Capture conditions
+
+Contrast was tested as a predictor of classifier error and does **not** work for
+that: at every threshold it caught none of SpeciesNet's incorrect calls, and
+above 30 it only began discarding correct ones. It does predict *abstention* —
+below contrast 30 every file in the library was one the classifier declined to
+identify, against roughly a fifth above it. That is why the sorter uses it to
+explain unsorted files rather than to gate classifications.
+
 ## Caveats
 
 The library's labels are curated unevenly — some folders were hand-corrected,

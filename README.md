@@ -38,7 +38,7 @@ moved.
 
 `manifest.csv` sits at the root of the run folder with one row per sorted file —
 `original_file`, `species`, `confidence`, `captured_at`, `media_type`,
-`output_file` — ordered by capture time. The folder tree answers "show me the
+`contrast`, `conditions`, `output_file` — ordered by capture time. The folder tree answers "show me the
 lynx"; the manifest answers "when, and how sure were you", which is what a
 survey report has to cite and what lets you re-check every low-confidence call
 without opening the rest.
@@ -172,6 +172,34 @@ environment variables:
 
 A camera card is located at runtime, so the "Memory card from camera" option
 works whatever the card is labelled, and greys out when nothing is mounted.
+
+## Capture conditions
+
+A camera trap fires in fog, rain and full dark, and some of what it returns is
+not identifiable by any model. Each file's contrast is measured and recorded in
+the manifest, and anything below `--low_contrast_threshold` (default 30) is
+reported as shot in poor conditions.
+
+This separates two things that otherwise both land in `unsorted`:
+
+| | contrast | result | meaning |
+| --- | --- | --- | --- |
+| fogged frame | 22 | `unsorted`, `low_contrast` | the frame is the limit |
+| dark frame | 34 | `review_cat`, `ok` | frame is fine, model would not commit |
+
+The first needs a camera moved; the second needs a person to look. Saying which
+is which is the difference between a field problem and a software one when the
+output is being cited in a report.
+
+Contrast is the signal rather than brightness because fog produces frames that
+are bright but flat — in the reference library the fogged frames sit near 99,
+brighter than correctly-classified badger shots at 36, while their contrast
+collapses to 22 against 40–57 elsewhere.
+
+**It never changes a classification.** Measured against the labelled library, no
+threshold caught any of the classifier's incorrect calls, and thresholds above
+the default only discarded correct ones. It annotates and explains; it does not
+override.
 
 ## Supported formats
 

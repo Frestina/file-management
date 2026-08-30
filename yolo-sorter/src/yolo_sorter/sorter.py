@@ -17,6 +17,12 @@ from file_renamer import FileRenamer
 from .detection.image_detector import ImageDetector
 from .detection.video_detector import VideoDetector
 from .ui.display import create_progress, sorting_summary, visualize_summary
+from .utils.image_quality import (
+  LOW_CONTRAST_THRESHOLD,
+  describe_conditions,
+  measure_contrast,
+  measure_video_contrast,
+)
 from .utils.file_utils import (
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -42,10 +48,12 @@ class YoloFileSorter:
       min_confidence: float = 0.25,
       backend: str = "yolo",
       language: str = "en",
+      low_contrast_threshold: float = LOW_CONTRAST_THRESHOLD,
   ) -> None:
     """Initialize the YOLO file sorter."""
     self.backend = backend
     self.language = language
+    self.low_contrast_threshold = low_contrast_threshold
 
     model_name = (
       "speciesnet" if backend == "speciesnet"
@@ -108,6 +116,7 @@ class YoloFileSorter:
         
     # Per-file results, written out as manifest.csv at the end of a run.
     self.manifest: List[Dict[str, str]] = []
+    self.low_contrast_count = 0
 
     # Counters
     self.class_counts: Dict[str, int] = {}
@@ -269,6 +278,17 @@ class YoloFileSorter:
     # Update counter
     self.class_counts[class_name] = self.class_counts.get(class_name, 0) + 1
 
+    # Measured on the original, not the compressed copy, since compression
+    # alters contrast.
+    if media_type == "video":
+      contrast = measure_video_contrast(original_path)
+    else:
+      contrast = measure_contrast(original_path)
+
+    conditions = describe_conditions(contrast, self.low_contrast_threshold)
+    if conditions == "low_contrast":
+      self.low_contrast_count += 1
+
     self.manifest.append({
       "original_file": original_name,
       "species": class_name,
@@ -277,6 +297,8 @@ class YoloFileSorter:
         sep=" ", timespec="seconds"
       ),
       "media_type": media_type,
+      "contrast": f"{contrast:.1f}" if contrast is not None else "",
+      "conditions": conditions,
       "output_file": str(dest_path.relative_to(self.base_output_dir)),
     })
 
@@ -394,8 +416,8 @@ class YoloFileSorter:
 
     manifest_path = self.base_output_dir / "manifest.csv"
     fieldnames = [
-      "original_file", "species", "confidence",
-      "captured_at", "media_type", "output_file",
+      "original_file", "species", "confidence", "captured_at",
+      "media_type", "contrast", "conditions", "output_file",
     ]
 
     try:
@@ -412,9 +434,38 @@ class YoloFileSorter:
     except OSError as e:
       self.console.print(f"[yellow]Warning: Could not write manifest: {e}[/yellow]")
 
+  def _report_conditions(self) -> None:
+    """
+    Report files whose capture conditions made them hard to identify.
+
+    Worth stating separately from the rest of the summary: it distinguishes a
+    frame no model could read from one the classifier simply got nothing out
+    of, which is the difference between a field problem and a software one.
+    """
+    if not self.low_contrast_count:
+      return
+
+    unidentified = sum(
+      1 for row in self.manifest
+      if row["conditions"] == "low_contrast"
+      and (row["species"].startswith(("unsorted", "usortert", "review_", "usikker_")))
+    )
+
+    self.console.print(
+      f"[yellow]{self.low_contrast_count} file(s) shot in poor conditions[/yellow] "
+      f"[dim](contrast below {self.low_contrast_threshold:g} — fog, rain or "
+      f"darkness).[/dim]"
+    )
+    if unidentified:
+      self.console.print(
+        f"  [dim]{unidentified} of those could not be identified. The frames "
+        f"themselves are the limit, not the model — see manifest.csv.[/dim]"
+      )
+
   def _cleanup_and_report(self) -> None:
     """Clean up temporary files and show final report."""
     self._write_manifest()
+    self._report_conditions()
 
     # Clean up compressed files
     if self.temp_compressed_dir and self.temp_compressed_dir.exists():
